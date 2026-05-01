@@ -1,5 +1,5 @@
-import { FileCode2, FileType, FileJson, Monitor } from 'lucide-react';
-import type { FileType as FileTypeEnum } from '../types';
+import { FileCode2, FileJson } from 'lucide-react';
+import type { FileType } from '../types';
 
 interface EditorTabsProps {
   activeFile: FileType;
@@ -8,7 +8,7 @@ interface EditorTabsProps {
 
 const files = [
   { type: 'html' as FileType, name: 'index.html', icon: FileCode2 },
-  { type: 'css' as FileType, name: 'styles.css', icon: FileType },
+  { type: 'css' as FileType, name: 'styles.css', icon: FileCode2 },
   { type: 'js' as FileType, name: 'script.js', icon: FileJson },
 ] as const;
 
