@@ -27,10 +27,9 @@ import {
   Github,
   Linkedin,
   Mail,
-  Globe,
+Globe,
   Maximize2,
-  Minus,
-  ExternalLink
+  Minus
 } from 'lucide-react';
 
 const InstagramIcon = ({ size = 22 }: { size?: number }) => (
@@ -99,7 +98,7 @@ function FileBadge({ name }: { name: string }) {
 }
 
 function App() {
-  const {  } = useTheme();
+  const { isDark } = useTheme();
   const {
     html,
     css,
