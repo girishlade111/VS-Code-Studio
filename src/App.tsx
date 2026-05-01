@@ -11,6 +11,7 @@ import {
   Bell,
   ChevronDown,
   ChevronRight,
+  ChevronUp,
   X,
   Terminal,
   AlertCircle,
@@ -21,12 +22,14 @@ import {
   Moon,
   Download,
   FilePlus,
+  FolderPlus,
   FolderOpen,
   Save,
   RefreshCw,
   MoreHorizontal,
   SplitSquareHorizontal,
-  Maximize2
+  Maximize2,
+  Minus
 } from 'lucide-react';
 import type { ConsoleLog, Toast } from './types';
 import { useTheme } from './hooks/useTheme';
@@ -34,20 +37,46 @@ import { useCodeEditor } from './hooks/useCodeEditor';
 import { exportProject } from './utils/export';
 import './App.css';
 
-type FileKey = 'html' | 'css' | 'js';
+type CoreFileKey = 'html' | 'css' | 'js';
+type FileKey = string;
 
-const FILE_META: Record<FileKey, { name: string; color: string; icon: string }> = {
-  html: { name: 'index.html', color: '#e34c26', icon: 'html' },
-  css: { name: 'styles.css', color: '#264de4', icon: 'css' },
-  js: { name: 'script.js', color: '#f7df1e', icon: 'js' }
+interface UserFile {
+  key: string;
+  name: string;
+  language: string;
+  content: string;
+}
+
+const CORE_FILE_META: Record<CoreFileKey, { name: string; color: string; label: string }> = {
+  html: { name: 'index.html', color: '#e34c26', label: '<>' },
+  css: { name: 'styles.css', color: '#264de4', label: '#' },
+  js: { name: 'script.js', color: '#f7df1e', label: 'JS' }
 };
 
-function FileIcon({ type }: { type: FileKey }) {
-  const color = FILE_META[type].color;
-  const label = type.toUpperCase();
+const EXT_META: Record<string, { color: string; label: string; lang: string }> = {
+  html: { color: '#e34c26', label: '<>', lang: 'html' },
+  htm: { color: '#e34c26', label: '<>', lang: 'html' },
+  css: { color: '#264de4', label: '#', lang: 'css' },
+  scss: { color: '#cd6799', label: '#', lang: 'scss' },
+  js: { color: '#f7df1e', label: 'JS', lang: 'javascript' },
+  jsx: { color: '#61dafb', label: 'JX', lang: 'javascript' },
+  ts: { color: '#3178c6', label: 'TS', lang: 'typescript' },
+  tsx: { color: '#3178c6', label: 'TX', lang: 'typescript' },
+  json: { color: '#cbcb41', label: '{}', lang: 'json' },
+  md: { color: '#519aba', label: 'M↓', lang: 'markdown' },
+  txt: { color: '#888888', label: 'T', lang: 'plaintext' }
+};
+
+function getExtMeta(name: string) {
+  const ext = name.split('.').pop()?.toLowerCase() ?? '';
+  return EXT_META[ext] ?? { color: '#888', label: ext.slice(0, 2).toUpperCase() || '?', lang: 'plaintext' };
+}
+
+function FileBadge({ name }: { name: string }) {
+  const meta = getExtMeta(name);
   return (
-    <span className="file-icon" style={{ background: color }}>
-      {label === 'JS' ? 'JS' : label === 'CSS' ? '#' : '<>'}
+    <span className="file-icon" style={{ background: meta.color }}>
+      {meta.label}
     </span>
   );
 }
@@ -74,10 +103,20 @@ function App() {
   const [folderOpen, setFolderOpen] = useState(true);
   const [bottomPanel, setBottomPanel] = useState<'console' | 'preview' | 'problems'>('console');
   const [activitySection, setActivitySection] = useState<'explorer' | 'search' | 'git' | 'run'>('explorer');
+  const [userFiles, setUserFiles] = useState<UserFile[]>([]);
+
+  // Resize / panel state
+  const [sidebarWidth, setSidebarWidth] = useState(240);
+  const [editorFlex, setEditorFlex] = useState(0.55); // 0..1 fraction for editor pane width
+  const [bottomHeight, setBottomHeight] = useState(220);
+  const [panelMaximized, setPanelMaximized] = useState(false);
+  const [panelMinimized, setPanelMinimized] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const editorContainerRef = useRef<HTMLDivElement>(null);
+  const mainAreaRef = useRef<HTMLDivElement>(null);
 
   const showToast = useCallback((message: string, type: Toast['type'] = 'info') => {
     const id = Date.now().toString();
@@ -94,18 +133,60 @@ function App() {
     });
   }, []);
 
+  const isCoreKey = (k: string): k is CoreFileKey => k === 'html' || k === 'css' || k === 'js';
+
+  const getFileInfo = (key: FileKey): { name: string; language: string; content: string } => {
+    if (isCoreKey(key)) {
+      const content = key === 'html' ? html : key === 'css' ? css : js;
+      return { name: CORE_FILE_META[key].name, language: getExtMeta(CORE_FILE_META[key].name).lang, content };
+    }
+    const f = userFiles.find(f => f.key === key);
+    if (!f) return { name: 'untitled', language: 'plaintext', content: '' };
+    return { name: f.name, language: f.language, content: f.content };
+  };
+
   const handleCodeChange = useCallback((value: string | undefined) => {
-    if (value !== undefined) {
+    if (value === undefined) return;
+    if (isCoreKey(activeFile)) {
       updateCode(activeFile, value);
+    } else {
+      setUserFiles(prev => prev.map(f => f.key === activeFile ? { ...f, content: value } : f));
     }
   }, [activeFile, updateCode]);
 
   const handleNew = useCallback(() => {
     if (window.confirm('Create new project? Unsaved changes will be lost.')) {
       newProject();
+      setUserFiles([]);
+      setOpenTabs(['html', 'css', 'js']);
       showToast('New project created', 'success');
     }
   }, [newProject, showToast]);
+
+  const handleNewFile = useCallback(() => {
+    const name = window.prompt('Enter file name (e.g. about.html, utils.js):');
+    if (!name) return;
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    if (!/\.[a-z0-9]+$/i.test(trimmed)) {
+      showToast('File must have an extension', 'error');
+      return;
+    }
+    const exists =
+      Object.values(CORE_FILE_META).some(m => m.name.toLowerCase() === trimmed.toLowerCase()) ||
+      userFiles.some(f => f.name.toLowerCase() === trimmed.toLowerCase());
+    if (exists) {
+      showToast(`${trimmed} already exists`, 'error');
+      return;
+    }
+    const meta = getExtMeta(trimmed);
+    const key = `user_${Date.now()}_${trimmed}`;
+    const file: UserFile = { key, name: trimmed, language: meta.lang, content: '' };
+    setUserFiles(prev => [...prev, file]);
+    setOpenTabs(prev => [...prev, key]);
+    setActiveFile(key as CoreFileKey);
+    showToast(`Created ${trimmed}`, 'success');
+  }, [userFiles, setActiveFile, showToast]);
 
   const handleOpen = useCallback(() => {
     fileInputRef.current?.click();
@@ -146,6 +227,12 @@ function App() {
         if (ext === 'html') updateCode('html', content);
         else if (ext === 'css') updateCode('css', content);
         else if (ext === 'js') updateCode('js', content);
+        else {
+          const meta = getExtMeta(file.name);
+          const key = `user_${Date.now()}_${file.name}`;
+          setUserFiles(prev => [...prev, { key, name: file.name, language: meta.lang, content }]);
+          setOpenTabs(prev => [...prev, key]);
+        }
         showToast(`Loaded ${file.name}`, 'success');
       };
       reader.readAsText(file);
@@ -155,7 +242,7 @@ function App() {
 
   const openFile = (key: FileKey) => {
     if (!openTabs.includes(key)) setOpenTabs(prev => [...prev, key]);
-    setActiveFile(key);
+    setActiveFile(key as CoreFileKey);
   };
 
   const closeTab = (e: React.MouseEvent, key: FileKey) => {
@@ -163,8 +250,97 @@ function App() {
     const newTabs = openTabs.filter(t => t !== key);
     setOpenTabs(newTabs);
     if (activeFile === key && newTabs.length > 0) {
-      setActiveFile(newTabs[newTabs.length - 1]);
+      setActiveFile(newTabs[newTabs.length - 1] as CoreFileKey);
     }
+  };
+
+  const deleteUserFile = (e: React.MouseEvent, key: string) => {
+    e.stopPropagation();
+    const file = userFiles.find(f => f.key === key);
+    if (!file) return;
+    if (!window.confirm(`Delete ${file.name}?`)) return;
+    setUserFiles(prev => prev.filter(f => f.key !== key));
+    setOpenTabs(prev => prev.filter(t => t !== key));
+    if (activeFile === key) setActiveFile('html');
+    showToast(`Deleted ${file.name}`, 'info');
+  };
+
+  // ----- Resize handlers -----
+  const startSidebarResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = sidebarWidth;
+    const onMove = (ev: MouseEvent) => {
+      const w = Math.min(500, Math.max(160, startW + (ev.clientX - startX)));
+      setSidebarWidth(w);
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      document.body.style.cursor = '';
+    };
+    document.body.style.cursor = 'col-resize';
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+
+  const startEditorResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const container = editorContainerRef.current;
+    if (!container) return;
+    const rect = container.getBoundingClientRect();
+    const onMove = (ev: MouseEvent) => {
+      const f = (ev.clientX - rect.left) / rect.width;
+      setEditorFlex(Math.min(0.9, Math.max(0.1, f)));
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      document.body.style.cursor = '';
+    };
+    document.body.style.cursor = 'col-resize';
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+
+  const startBottomResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (panelMinimized || panelMaximized) return;
+    const startY = e.clientY;
+    const startH = bottomHeight;
+    const main = mainAreaRef.current;
+    const maxH = main ? main.clientHeight - 120 : 600;
+    const onMove = (ev: MouseEvent) => {
+      const h = Math.min(maxH, Math.max(80, startH - (ev.clientY - startY)));
+      setBottomHeight(h);
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      document.body.style.cursor = '';
+    };
+    document.body.style.cursor = 'row-resize';
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+
+  const togglePanelMaximize = () => {
+    setPanelMinimized(false);
+    setPanelMaximized(p => !p);
+  };
+
+  const togglePanelMinimize = () => {
+    if (panelMinimized) {
+      setPanelMinimized(false);
+    } else {
+      setPanelMaximized(false);
+      setPanelMinimized(true);
+    }
+  };
+
+  const closePanel = () => {
+    setPanelMinimized(true);
+    setPanelMaximized(false);
   };
 
   useEffect(() => {
@@ -185,25 +361,31 @@ function App() {
           handleSave();
         } else if (e.key === 'n') {
           e.preventDefault();
-          handleNew();
+          handleNewFile();
         } else if (e.key === 'e') {
           e.preventDefault();
           handleExport();
         } else if (e.key === 'b') {
           e.preventDefault();
           setExplorerOpen(prev => !prev);
+        } else if (e.key === 'j') {
+          e.preventDefault();
+          togglePanelMinimize();
         } else if (e.key === '`') {
           e.preventDefault();
           setBottomPanel('console');
+          setPanelMinimized(false);
         }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleSave, handleNew, handleExport]);
+  }, [handleSave, handleNewFile, handleExport, panelMinimized]);
 
-  const currentCode = activeFile === 'html' ? html : activeFile === 'css' ? css : js;
-  const language = activeFile === 'html' ? 'html' : activeFile === 'css' ? 'css' : 'javascript';
+  const currentInfo = getFileInfo(activeFile);
+  const currentCode = currentInfo.content;
+  const language = currentInfo.language;
+  const currentName = currentInfo.name;
 
   const previewContent = `
     <!DOCTYPE html>
@@ -252,32 +434,30 @@ function App() {
   const updatePreview = useCallback(() => {
     const iframe = iframeRef.current;
     if (!iframe) return;
-    try {
-      const doc = iframe.contentDocument;
-      if (doc) {
-        doc.open();
-        doc.write(previewContent);
-        doc.close();
-      }
-    } catch {
-      iframe.srcdoc = previewContent;
+    const doc = iframe.contentDocument;
+    if (doc) {
+      doc.open();
+      doc.write(previewContent);
+      doc.close();
     }
   }, [previewContent]);
 
-  // Update preview on code change with debounce
   useEffect(() => {
-    const timer = setTimeout(() => {
-      updatePreview();
-    }, 300);
+    const timer = setTimeout(() => updatePreview(), 100);
     return () => clearTimeout(timer);
   }, [updatePreview]);
 
-  // Initial render
-  useEffect(() => {
-    if (iframeRef.current) {
-      updatePreview();
-    }
-  }, []);
+  const renderTabName = (key: FileKey) => {
+    if (isCoreKey(key)) return CORE_FILE_META[key].name;
+    return userFiles.find(f => f.key === key)?.name ?? 'untitled';
+  };
+
+  // Bottom panel sizing
+  const panelHeightStyle: React.CSSProperties = panelMinimized
+    ? { height: 35, minHeight: 35, resize: 'none' }
+    : panelMaximized
+      ? { flex: 1, height: 'auto', minHeight: 0, maxHeight: 'none', resize: 'none' }
+      : { height: bottomHeight, minHeight: 80, resize: 'none' };
 
   return (
     <div className="vscode-shell">
@@ -314,7 +494,7 @@ function App() {
       </header>
 
       {/* Main Layout */}
-      <div className="vscode-body">
+      <div className="vscode-body" ref={mainAreaRef}>
         {/* Activity Bar */}
         <aside className="activity-bar">
           <div className="activity-top">
@@ -362,60 +542,86 @@ function App() {
 
         {/* Side Bar (Explorer) */}
         {explorerOpen && (
-          <aside className="side-bar">
-            <div className="side-bar-header">
-              <span>Explorer</span>
-              <div className="side-bar-actions">
-                <button className="icon-btn" title="New File" onClick={handleNew}>
-                  <FilePlus size={14} />
+          <>
+            <aside className="side-bar" style={{ width: sidebarWidth }}>
+              <div className="side-bar-header">
+                <span>Explorer</span>
+                <div className="side-bar-actions">
+                  <button className="icon-btn" title="New File (Ctrl+N)" onClick={handleNewFile}>
+                    <FilePlus size={14} />
+                  </button>
+                  <button className="icon-btn" title="New Folder">
+                    <FolderPlus size={14} />
+                  </button>
+                  <button className="icon-btn" title="Open File" onClick={handleOpen}>
+                    <FolderOpen size={14} />
+                  </button>
+                  <button className="icon-btn" title="Refresh / New Project" onClick={handleNew}>
+                    <RefreshCw size={14} />
+                  </button>
+                  <button className="icon-btn" title="More Actions">
+                    <MoreHorizontal size={14} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="explorer-section">
+                <button
+                  className="folder-row"
+                  onClick={() => setFolderOpen(o => !o)}
+                >
+                  {folderOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                  <span className="folder-name">CODE-STUDIO</span>
                 </button>
-                <button className="icon-btn" title="Open File" onClick={handleOpen}>
-                  <FolderOpen size={14} />
-                </button>
-                <button className="icon-btn" title="More Actions">
-                  <MoreHorizontal size={14} />
+
+                {folderOpen && (
+                  <div className="folder-children">
+                    {(Object.keys(CORE_FILE_META) as CoreFileKey[]).map(key => (
+                      <button
+                        key={key}
+                        className={`file-row ${activeFile === key ? 'active' : ''}`}
+                        onClick={() => openFile(key)}
+                      >
+                        <FileBadge name={CORE_FILE_META[key].name} />
+                        <span className="file-name">{CORE_FILE_META[key].name}</span>
+                      </button>
+                    ))}
+                    {userFiles.map(f => (
+                      <button
+                        key={f.key}
+                        className={`file-row ${activeFile === f.key ? 'active' : ''}`}
+                        onClick={() => openFile(f.key)}
+                      >
+                        <FileBadge name={f.name} />
+                        <span className="file-name">{f.name}</span>
+                        <span
+                          className="file-delete"
+                          onClick={(e) => deleteUserFile(e, f.key)}
+                          title="Delete"
+                        >
+                          <X size={12} />
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="explorer-section outline">
+                <button className="folder-row">
+                  <ChevronRight size={14} />
+                  <span className="folder-name">OUTLINE</span>
                 </button>
               </div>
-            </div>
-
-            <div className="explorer-section">
-              <button
-                className="folder-row"
-                onClick={() => setFolderOpen(o => !o)}
-              >
-                {folderOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                <span className="folder-name">CODE-STUDIO</span>
-              </button>
-
-              {folderOpen && (
-                <div className="folder-children">
-                  {(Object.keys(FILE_META) as FileKey[]).map(key => (
-                    <button
-                      key={key}
-                      className={`file-row ${activeFile === key ? 'active' : ''}`}
-                      onClick={() => openFile(key)}
-                    >
-                      <FileIcon type={key} />
-                      <span className="file-name">{FILE_META[key].name}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="explorer-section outline">
-              <button className="folder-row">
-                <ChevronRight size={14} />
-                <span className="folder-name">OUTLINE</span>
-              </button>
-            </div>
-            <div className="explorer-section outline">
-              <button className="folder-row">
-                <ChevronRight size={14} />
-                <span className="folder-name">TIMELINE</span>
-              </button>
-            </div>
-          </aside>
+              <div className="explorer-section outline">
+                <button className="folder-row">
+                  <ChevronRight size={14} />
+                  <span className="folder-name">TIMELINE</span>
+                </button>
+              </div>
+            </aside>
+            <div className="resizer-v" onMouseDown={startSidebarResize} />
+          </>
         )}
 
         {/* Editor + Panel Group */}
@@ -427,10 +633,10 @@ function App() {
                 <button
                   key={key}
                   className={`tab ${activeFile === key ? 'active' : ''}`}
-                  onClick={() => setActiveFile(key)}
+                  onClick={() => setActiveFile(key as CoreFileKey)}
                 >
-                  <FileIcon type={key} />
-                  <span className="tab-name">{FILE_META[key].name}</span>
+                  <FileBadge name={renderTabName(key)} />
+                  <span className="tab-name">{renderTabName(key)}</span>
                   <span
                     className="tab-close"
                     onClick={(e) => closeTab(e, key)}
@@ -441,6 +647,9 @@ function App() {
               ))}
             </div>
             <div className="tab-actions">
+              <button className="icon-btn" onClick={handleNewFile} title="New File (Ctrl+N)">
+                <FilePlus size={16} />
+              </button>
               <button className="icon-btn" onClick={handleFormat} title="Format Code">
                 <Code2 size={16} />
               </button>
@@ -464,114 +673,145 @@ function App() {
             <span className="crumb">code-studio</span>
             <ChevronRight size={12} />
             <span className="crumb">
-              <FileIcon type={activeFile} />
-              {FILE_META[activeFile].name}
+              <FileBadge name={currentName} />
+              {currentName}
             </span>
           </div>
 
-          {/* Editor */}
-          <div className="editor-container">
-            <div className="editor-pane">
-              <Editor
-                height="100%"
-                language={language}
-                value={currentCode}
-                theme={isDark ? 'vs-dark' : 'vs'}
-                onMount={handleEditorMount}
-                onChange={handleCodeChange}
-                options={{
-                  fontSize: 13,
-                  fontFamily: "'Cascadia Code', 'Consolas', 'Courier New', monospace",
-                  fontLigatures: true,
-                  minimap: { enabled: true, scale: 1 },
-                  lineNumbers: 'on',
-                  roundedSelection: false,
-                  scrollBeyondLastLine: true,
-                  automaticLayout: true,
-                  tabSize: 2,
-                  wordWrap: 'off',
-                  padding: { top: 8 },
-                  renderLineHighlight: 'all',
-                  smoothScrolling: true,
-                  cursorBlinking: 'smooth',
-                  bracketPairColorization: { enabled: true },
-                  guides: { indentation: true, bracketPairs: true },
-                  scrollbar: {
-                    verticalScrollbarSize: 14,
-                    horizontalScrollbarSize: 14
-                  }
-                }}
-              />
-            </div>
-
-            {/* Live Preview Pane */}
-            <div className="preview-pane">
-              <div className="pane-header">
-                <span className="pane-title">PREVIEW</span>
-                <button className="icon-btn" onClick={updatePreview} title="Reload">
-                  <RefreshCw size={14} />
-                </button>
+          {/* Editor + Preview area */}
+          {!panelMaximized && (
+            <div
+              className="editor-container"
+              ref={editorContainerRef}
+              style={{ flex: panelMinimized ? 1 : `1 1 auto` }}
+            >
+              <div className="editor-pane" style={{ flex: `${editorFlex} 1 0` }}>
+                <Editor
+                  height="100%"
+                  language={language}
+                  path={currentName}
+                  value={currentCode}
+                  theme={isDark ? 'vs-dark' : 'vs'}
+                  onMount={handleEditorMount}
+                  onChange={handleCodeChange}
+                  options={{
+                    fontSize: 13,
+                    fontFamily: "'Cascadia Code', 'Consolas', 'Courier New', monospace",
+                    fontLigatures: true,
+                    minimap: { enabled: true, scale: 1 },
+                    lineNumbers: 'on',
+                    roundedSelection: false,
+                    scrollBeyondLastLine: true,
+                    automaticLayout: true,
+                    tabSize: 2,
+                    wordWrap: 'off',
+                    padding: { top: 8 },
+                    renderLineHighlight: 'all',
+                    smoothScrolling: true,
+                    cursorBlinking: 'smooth',
+                    bracketPairColorization: { enabled: true },
+                    guides: { indentation: true, bracketPairs: true },
+                    scrollbar: {
+                      verticalScrollbarSize: 14,
+                      horizontalScrollbarSize: 14
+                    }
+                  }}
+                />
               </div>
-              <iframe
-                ref={iframeRef}
-                className="preview-frame"
-                title="Preview"
-                sandbox="allow-scripts"
-                srcDoc={previewContent}
-              />
+
+              <div className="resizer-v" onMouseDown={startEditorResize} />
+
+              <div className="preview-pane" style={{ flex: `${1 - editorFlex} 1 0` }}>
+                <div className="pane-header">
+                  <span className="pane-title">PREVIEW</span>
+                  <button className="icon-btn" onClick={updatePreview} title="Reload">
+                    <RefreshCw size={14} />
+                  </button>
+                </div>
+                <iframe
+                  ref={iframeRef}
+                  className="preview-frame"
+                  title="Preview"
+                  sandbox="allow-scripts"
+                />
+              </div>
             </div>
-          </div>
+          )}
+
+          {/* Bottom Panel resize handle */}
+          {!panelMinimized && !panelMaximized && (
+            <div className="resizer-h" onMouseDown={startBottomResize} />
+          )}
 
           {/* Bottom Panel */}
-          <div className="bottom-panel">
+          <div
+            className={`bottom-panel ${panelMinimized ? 'minimized' : ''} ${panelMaximized ? 'maximized' : ''}`}
+            style={panelHeightStyle}
+          >
             <div className="panel-tabs">
               <button
                 className={`panel-tab ${bottomPanel === 'problems' ? 'active' : ''}`}
-                onClick={() => setBottomPanel('problems')}
+                onClick={() => { setBottomPanel('problems'); setPanelMinimized(false); }}
               >
                 PROBLEMS <span className="badge">0</span>
               </button>
               <button
                 className={`panel-tab ${bottomPanel === 'console' ? 'active' : ''}`}
-                onClick={() => setBottomPanel('console')}
+                onClick={() => { setBottomPanel('console'); setPanelMinimized(false); }}
               >
                 OUTPUT
               </button>
               <button
-                className={`panel-tab terminal ${bottomPanel === 'preview' ? 'active' : ''}`}
-                onClick={() => setBottomPanel('preview')}
+                className={`panel-tab ${bottomPanel === 'preview' ? 'active' : ''}`}
+                onClick={() => { setBottomPanel('preview'); setPanelMinimized(false); }}
               >
                 DEBUG CONSOLE
               </button>
-              <button className="panel-tab active-only">
+              <button className="panel-tab">
                 TERMINAL
               </button>
               <div className="panel-spacer" />
-              <button className="icon-btn" onClick={handleClear} title="Clear">
+              <button className="icon-btn" onClick={handleClear} title="Clear Output">
                 <Trash2 size={14} />
               </button>
-              <button className="icon-btn" title="Close Panel">
+              <button
+                className="icon-btn"
+                onClick={togglePanelMaximize}
+                title={panelMaximized ? 'Restore Panel Size' : 'Maximize Panel Size'}
+              >
+                {panelMaximized ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+              </button>
+              <button
+                className="icon-btn"
+                onClick={togglePanelMinimize}
+                title={panelMinimized ? 'Restore Panel' : 'Hide Panel'}
+              >
+                <Minus size={14} />
+              </button>
+              <button className="icon-btn" onClick={closePanel} title="Close Panel">
                 <X size={14} />
               </button>
             </div>
-            <div className="panel-body">
-              {consoleLogs.length === 0 ? (
-                <div className="console-empty">
-                  <Terminal size={14} />
-                  <span>&gt; Console ready. Run code to see output.</span>
-                </div>
-              ) : (
-                consoleLogs.map((log) => (
-                  <div key={log.id} className={`console-line ${log.type}`}>
-                    <span className="console-prefix">
-                      {log.type === 'error' ? '✖' : log.type === 'warn' ? '⚠' : '›'}
-                    </span>
-                    <span className="console-message">{log.message}</span>
-                    <span className="console-time">{log.timestamp.toLocaleTimeString()}</span>
+            {!panelMinimized && (
+              <div className="panel-body">
+                {consoleLogs.length === 0 ? (
+                  <div className="console-empty">
+                    <Terminal size={14} />
+                    <span>&gt; Console ready. Run code to see output.</span>
                   </div>
-                ))
-              )}
-            </div>
+                ) : (
+                  consoleLogs.map((log) => (
+                    <div key={log.id} className={`console-line ${log.type}`}>
+                      <span className="console-prefix">
+                        {log.type === 'error' ? '✖' : log.type === 'warn' ? '⚠' : '›'}
+                      </span>
+                      <span className="console-message">{log.message}</span>
+                      <span className="console-time">{log.timestamp.toLocaleTimeString()}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
           </div>
         </main>
       </div>
@@ -598,7 +838,7 @@ function App() {
           <span className="status-item">Spaces: 2</span>
           <span className="status-item">UTF-8</span>
           <span className="status-item">LF</span>
-          <span className="status-item">{language === 'javascript' ? 'JavaScript' : language.toUpperCase()}</span>
+          <span className="status-item">{language === 'javascript' ? 'JavaScript' : language === 'typescript' ? 'TypeScript' : language.toUpperCase()}</span>
           <span className="status-item">
             <Bell size={12} />
           </span>
@@ -610,7 +850,6 @@ function App() {
         ref={fileInputRef}
         type="file"
         multiple
-        accept=".html,.css,.js"
         onChange={handleFileChange}
       />
 

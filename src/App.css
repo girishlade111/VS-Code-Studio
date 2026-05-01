@@ -589,15 +589,74 @@ button {
    ========================================= */
 .bottom-panel {
   height: 220px;
-  min-height: 100px;
-  max-height: 60vh;
+  min-height: 35px;
   display: flex;
   flex-direction: column;
   background: var(--vsc-panel-bg);
   border-top: 1px solid var(--vsc-divider);
-  resize: vertical;
   overflow: hidden;
   flex-shrink: 0;
+}
+
+.bottom-panel.minimized {
+  flex: 0 0 35px;
+}
+
+.bottom-panel.maximized {
+  flex: 1 1 auto;
+}
+
+/* =========================================
+   Resizers (split bars)
+   ========================================= */
+.resizer-v {
+  width: 4px;
+  cursor: col-resize;
+  background: transparent;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 5;
+  transition: background 0.15s 0.1s;
+}
+
+.resizer-v:hover,
+.resizer-v:active {
+  background: var(--vsc-blue);
+}
+
+.resizer-h {
+  height: 4px;
+  cursor: row-resize;
+  background: transparent;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 5;
+  transition: background 0.15s 0.1s;
+}
+
+.resizer-h:hover,
+.resizer-h:active {
+  background: var(--vsc-blue);
+}
+
+/* File delete (in explorer) */
+.file-delete {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  opacity: 0.7;
+}
+
+.file-row:hover .file-delete {
+  display: inline-flex;
+}
+
+.file-delete:hover {
+  background: rgba(128, 128, 128, 0.3);
+  opacity: 1;
 }
 
 .panel-tabs {
