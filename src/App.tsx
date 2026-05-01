@@ -6,8 +6,6 @@ import {
   Search,
   GitBranch,
   Play,
-  Settings,
-  User,
   Bell,
   ChevronDown,
   ChevronRight,
@@ -18,8 +16,6 @@ import {
   CheckCircle,
   Code2,
   Trash2,
-  Sun,
-  Moon,
   Download,
   FilePlus,
   FolderPlus,
@@ -32,7 +28,9 @@ import {
   Linkedin,
   Mail,
   Globe,
-  Code
+  Maximize2,
+  Minus,
+  ExternalLink
 } from 'lucide-react';
 
 const InstagramIcon = ({ size = 22 }: { size?: number }) => (
