@@ -99,7 +99,7 @@ function FileBadge({ name }: { name: string }) {
 }
 
 function App() {
-  const { toggleTheme, isDark } = useTheme();
+  const {  } = useTheme();
   const {
     html,
     css,
@@ -119,7 +119,7 @@ function App() {
   const [explorerOpen, setExplorerOpen] = useState(true);
   const [folderOpen, setFolderOpen] = useState(true);
   const [bottomPanel, setBottomPanel] = useState<'console' | 'preview' | 'problems'>('console');
-  const [activitySection, setActivitySection] = useState<'explorer' | 'search' | 'git' | 'run'>('explorer');
+  const [activitySection, setActivitySection] = useState<'explorer' | 'search' | 'git' | 'run' | 'extensions'>('explorer');
   const [userFiles, setUserFiles] = useState<UserFile[]>([]);
 
   // Resize / panel state
