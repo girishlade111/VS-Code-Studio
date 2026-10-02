@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<browserconfig>
+  <msapplication>
+    <tile>
+      <square150x150logo src="/favicon.svg"/>
+      <TileColor>#6366f1</TileColor>
+    </tile>
+    <ie11>
+      <homepage url="https://ladestack.in/"/>
+    </ie11>
+  </msapplication>
+</browserconfig>

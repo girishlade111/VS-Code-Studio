@@ -1,0 +1,70 @@
+# https://www.robotstxt.org/robotstxt.html
+# Allow all crawlers to access all content
+
+User-agent: *
+Allow: /
+
+# Sitemap location
+Sitemap: https://ladestack.in/sitemap.xml
+
+# Crawl-delay (optional, for polite crawling)
+Crawl-delay: 1
+
+# Disallow paths that should not be crawled (none - all content is public)
+# No restricted areas
+
+# Host directive (preferred domain)
+Host: ladestack.in
+
+# Clean URLs - treat trailing slashes consistently
+Clean-param: utm_source *
+Clean-param: utm_medium *
+Clean-param: utm_campaign *
+Clean-param: utm_content *
+Clean-param: ref *
+
+# Additional crawler user-agents for specific permissions
+User-agent: Googlebot
+Allow: /
+
+User-agent: Googlebot-Image
+Allow: /
+
+User-agent: Googlebot-Video
+Allow: /
+
+User-agent: Googlebot-News
+Allow: /
+
+User-agent: Bingbot
+Allow: /
+
+User-agent: Slurp
+Allow: /
+
+User-agent: DuckDuckBot
+Allow: /
+
+User-agent: BaiduSpider
+Allow: /
+
+User-agent: YandexBot
+Allow: /
+
+User-agent: FACEBOOKEXTERNALHIT
+Allow: /
+
+User-agent: Twitterbot
+Allow: /
+
+User-agent: Applebot
+Allow: /
+
+User-agent: GPTBot
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Bytespider
+Allow: /
